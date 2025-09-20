@@ -1,27 +1,82 @@
-# LrcCross
+# LRC Cross Angular Project
 
-This project was generated with [Angular CLI](https://github.com/angular/angular-cli) version 17.0.6.
+This project is an **Angular application** that visualizes the LRC Cross strategy using **Lightweight Charts v4** and Bybit market data.  
 
-## Development server
+## 🚀 Getting Started
 
-Run `ng serve` for a dev server. Navigate to `http://localhost:4200/`. The application will automatically reload if you change any of the source files.
+### 1. Clone the Repository
+```bash
+git clone <your-repo-url>
+cd <project-folder>
+```
 
-## Code scaffolding
+Replace `<your-repo-url>` with the actual GitHub or GitLab repository link.  
 
-Run `ng generate component component-name` to generate a new component. You can also use `ng generate directive|pipe|service|class|guard|interface|enum|module`.
+---
 
-## Build
+### 2. Install Dependencies
+Make sure you have **Node.js (>=18.x)** and **npm (>=9.x)** installed.  
+Then install project dependencies:
+```bash
+npm install
+```
 
-Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
+---
 
-## Running unit tests
+### 3. Run the Application
+Start the Angular development server:
+```bash
+ng serve
+```
 
-Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).
+The app will be available at:  
+👉 http://localhost:4200  
 
-## Running end-to-end tests
+---
 
-Run `ng e2e` to execute the end-to-end tests via a platform of your choice. To use this command, you need to first add a package that implements end-to-end testing capabilities.
+### 4. Build for Production
+To build an optimized version:
+```bash
+ng build --configuration production
+```
+The compiled files will be located in the **`dist/`** folder.  
 
-## Further help
+---
 
-To get more help on the Angular CLI use `ng help` or go check out the [Angular CLI Overview and Command Reference](https://angular.io/cli) page.
+## 📂 Project Structure
+```
+src/
+ ├── app/                  # Main Angular components & services
+ │    ├── chart/           # LRC chart component
+ │    ├── data.service.ts  # Data fetching (Bybit)
+ │    └── app.module.ts    # App module
+ ├── assets/               # Static files (icons, configs, etc.)
+ ├── environments/         # Environment configs
+ └── index.html            # App entry point
+```
+
+---
+
+## ⚡ Features
+- LRC Cross visualization  
+- Bybit market data fetching  
+- Lightweight Charts v4 integration  
+- Extendable for signals, statistics, and strategy research  
+
+---
+
+## 🛠 Useful Commands
+- `ng serve` → Run dev server  
+- `ng build` → Build production bundle  
+- `ng test` → Run unit tests  
+- `ng lint` → Check code style  
+
+---
+
+## 📌 Requirements
+- Node.js 18+  
+- npm 9+  
+- Angular CLI (install globally if not already installed):  
+  ```bash
+  npm install -g @angular/cli
+  ```
