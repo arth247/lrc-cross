@@ -1,0 +1,1201 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Modified trading strategy with fixes for Strong/Super signal issues
+
+//@version=6
+strategy('SV Strategy V.28 avg_entry_price from STRATEGY and ORDERS', overlay = true, calc_on_every_tick = true, pyramiding = 0, process_orders_on_close=true)
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                           Harmonic include EMA & SMA - RVWAP
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ {
+
+// -Tooltips -------------------------------------------------------------------------------------- //
+var t_one = 'Source input defines price data for VWAP (close, open, high, low, hl2, hlc3, ohlc4).'
+var t_two = 'Window input sets the number of bars for VWAP calculations; larger values smooth results, smaller values increase responsiveness.'
+
+CalculateSettings = 'Calculate Settings'
+
+// -Inputs for Volume Weighted Average Price (VWAP) -------------------------------------------------------------------------------------- //
+src = input(hlc3, title = 'VWAP Source', tooltip = 'Source for VWAP calculations.', group = CalculateSettings)
+win = input.int(100, title = 'VWAP Window', tooltip = 'Number of bars for VWAP calculations.', group = CalculateSettings)
+
+// -Function to calculate True Range -------------------------------------------------------------------------------------- //
+tr(h, l, c) =>
+    tr1 = h - l
+    tr2 = math.abs(h - c[1])
+    tr3 = math.abs(l - c[1])
+    math.max(tr1, tr2, tr3)
+
+// -Discrete Fourier Transform (DFT) function -------------------------------------------------------------------------------------- //
+dft(data, len) =>
+    re = 0.0
+    im = 0.0
+    for n = 0 to len - 1 by 1
+        ang = 2.0 * math.pi * n / len
+        re := re + array.get(data, n) * math.cos(ang)
+        im := im - array.get(data, n) * math.sin(ang)
+        im
+    [re / len, im / len]
+
+// -Calculate VWAP and Standard Deviation -------------------------------------------------------------------------------------- //
+rvwap = ta.vwma(src, win)
+
+// -Adjusted Price based on True Range -------------------------------------------------------------------------------------- //
+volAdj = ta.ema(tr(high, low, close), 100)
+devNew = math.avg(volAdj, ta.stdev(src, win))
+
+// -Standard Deviation Bands -------------------------------------------------------------------------------------- // 
+ub1 = rvwap + devNew * 2.0
+lb1 = rvwap - devNew * 2.0
+ub2 = rvwap + devNew * 2.5
+lb2 = rvwap - devNew * 2.5
+ub3 = rvwap + devNew * 3.0
+lb3 = rvwap - devNew * 3.0
+ub4 = rvwap + devNew * 3.5
+lb4 = rvwap - devNew * 3.5
+ub5 = rvwap + devNew * 4.0
+lb5 = rvwap - devNew * 4.0
+
+// -Inputs for SMA and EMA -------------------------------------------------------------------------------------- // 
+sma_length = input.int(21, title = 'SMA Length', group = 'SMA and EMA')
+ema_length = input.int(45, title = 'EMA Length', group = 'SMA and EMA')
+ma_source = input.source(close, title = 'MA Source', group = 'SMA and EMA')
+
+// -Calculate SMA and EMA -------------------------------------------------------------------------------------- //  
+sma_value = ta.sma(ma_source, sma_length)
+ema_value = ta.ema(ma_source, ema_length)
+
+// -Apply DFT on VWAP, Transformed VWAP--------------------------------------------------------------------------------------- //  
+vwma_series = ta.vwma(src, win) // Calculate VWMA for the entire series
+vwma_values = array.new_float(win, 0.0)
+for i = 0 to win - 1 by 1
+    vwma_value = vwma_series[i]
+    array.set(vwma_values, i, vwma_value)
+
+[re, im] = dft(vwma_values, win)
+tf_vwap = re
+
+// -Plotting RVWAP and TFvwap -------------------------------------------------------------------------------------- // 
+RVWAP = plot(rvwap, 'Rolling VWAP', color = color.purple)
+TFvwap = plot(tf_vwap, 'Fourier Transform VWAP', color = color.new(#FF5722, 100), editable = false)
+Close = plot(close, color = color.new(color.white, 100), editable = false)
+
+// -Plot Harmonic Rolling VWAP, Standard Deviation Bands, SMA and EMA -------------------------------------------------------------------------------------- // 
+plot(sma_value, title = 'SMA', color = color.blue, linewidth = 1, style = plot.style_line)
+plot(ema_value, title = 'EMA', color = color.orange, linewidth = 1, style = plot.style_line)
+
+ub1_p = plot(ub1, title = 'UB1', color = color.new(color.gray, 35), editable = false)
+lb1_p = plot(lb1, title = 'LB1', color = color.new(color.gray, 35), editable = false)
+ub2_p = plot(ub2, title = 'UB2', color = color.new(#f23645, 35), editable = false)
+lb2_p = plot(lb2, title = 'LB2', color = color.new(#089981, 35), editable = false)
+ub3_p = plot(ub3, title = 'UB3', color = color.new(#f23645, 35), editable = false)
+lb3_p = plot(lb3, title = 'LB3', color = color.new(#089981, 35), editable = false)
+ub4_p = plot(ub4, title = 'UB4', color = color.new(#f23645, 35), editable = false)
+lb4_p = plot(lb4, title = 'LB4', color = color.new(#089981, 35), editable = false)
+ub5_p = plot(ub5, title = 'UB5', color = color.new(#f23645, 35), editable = false)
+lb5_p = plot(lb5, title = 'LB5', color = color.new(#089981, 35), editable = false)
+
+fill(TFvwap, ub1_p, title = 'UB1_Fill', color = color.new(color.gray, 100), editable = false)
+fill(TFvwap, lb1_p, title = 'LB1_Fill', color = color.new(color.gray, 100), editable = false)
+fill(ub1_p, ub2_p, title = 'UB2_Fill', color = color.new(#f23645, 90), editable = false)
+fill(lb1_p, lb2_p, title = 'LB2_Fill', color = color.new(#089981, 90), editable = false)
+fill(ub2_p, ub3_p, title = 'UB3_Fill', color = color.new(#f23645, 85), editable = false)
+fill(lb2_p, lb3_p, title = 'LB3_Fill', color = color.new(#089981, 85), editable = false)
+fill(ub3_p, ub4_p, title = 'UB4_Fill', color = color.new(#f23645, 80), editable = false)
+fill(lb3_p, lb4_p, title = 'LB4_Fill', color = color.new(#089981, 80), editable = false)
+fill(ub4_p, ub5_p, title = 'UB5_Fill', color = color.new(#f23645, 75), editable = false)
+fill(lb4_p, lb5_p, title = 'LB5_Fill', color = color.new(#089981, 75), editable = false)
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+// Channel TrendLine Buy & Sell 
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+import scalpview/TrendLib/1 as TrendLine
+
+// -A Set of Input Parameters -------------------------------------------------------------------------------------- //
+Depth = input.int(12, 'Depth', minval = 1, step = 1, group = 'High-Low / Buy-Sell Labels')
+Deviation = input.int(5, 'Deviation', minval = 1, step = 1, group = 'High-Low / Buy-Sell Labels')
+Backstep = input.int(2, 'Backstep', minval = 2, step = 1, group = 'Lines')
+line_thick = input.int(2, 'Line Thickness', minval = 1, maxval = 4, group = 'Lines')
+labels = input(0, 'Labels Transparency', group = 'Labels')
+upcolor = input(#008000, 'Bull Color', group = 'Colors')
+dncolor = input(#F19CBB, 'Bear Color', group = 'Colors')
+lines = input(0, 'Lines Transparency', group = 'Lines')
+background = input(80, 'Background Transparency', group = 'Colors')
+enableTrendLine = input.bool(false, 'Enable TrendLine Indicator', group = 'Settings')
+
+label_size__0 = input.int(3, 'Label Size', minval = 1, maxval = 5, group = 'Labels')
+label_size = switch label_size__0
+    1 => size.tiny
+    2 => size.small
+    3 => size.normal
+    4 => size.large
+    5 => size.huge
+
+repaint = input(false, 'Repaint Levels')
+extend = input(false, 'Extend TrendLine', group = 'Lines')
+
+var line tl = na
+var label point = na
+
+// -Label Names Parameters -------------------------------------------------------------------------------------- //
+labelHH = input.string('HH', 'Higher High Label', group = 'Label Names')
+labelHL = input.string('HL', 'Higher Low Label', group = 'Label Names')
+labelLL = input.string('LL', 'Lower Low Label', group = 'Label Names')
+labelLH = input.string('LH', 'Lower High Label', group = 'Label Names')
+labelBuy = input.string('Buy', 'Buy Label', group = 'Label Names')
+labelSell = input.string('Sell', 'Sell Label', group = 'Label Names')
+
+// -Alert Conditions -------------------------------------------------------------------------------------- // 
+enableHH = input(true, 'Enable Higher High Alerts')
+enableLH = input(true, 'Enable Lower High Alerts')
+enableHL = input(true, 'Enable Higher Low Alerts')
+enableLL = input(true, 'Enable Lower Low Alerts')
+enableDirectionChange = input(true, 'Enable Direction Changed Alerts')
+enableBullishDirection = input(true, 'Enable Bullish Direction Alerts')
+enableBearishDirection = input(true, 'Enable Bearish Direction Alerts')
+enableBuySell = input(true, 'Enable Buy/Sell Alerts')
+
+
+// -TrendLine Calculation -------------------------------------------------------------------------------------- //
+[direction, t1, t2] = TrendLine.trendline(low, high, Depth, Deviation, Backstep)
+string nowPoint = ''
+var float lastPoint = na
+
+if bool(ta.change(direction))
+    field_0 = t1.price
+    lastPoint := field_0[1]
+    lastPoint
+
+if repaint
+    if enableTrendLine
+        tl := line.new(t1, t2, xloc.bar_time, extend ? extend.right : extend.none, color.new(direction > 0 ? upcolor : dncolor, lines), width = line_thick)
+        tl
+    nowPoint := direction < 0 ? t2.price < lastPoint ? 'LL' : 'HL' : t2.price > lastPoint ? 'HH' : 'LH'
+    labelText = nowPoint
+
+    if nowPoint == 'HH' and enableHH or nowPoint == 'LH' and enableLH or nowPoint == 'HL' and enableHL or nowPoint == 'LL' and enableLL
+        if enableBuySell
+            if nowPoint == 'HH' or nowPoint == 'LH'
+                labelText := labelSell
+                labelText
+            else if nowPoint == 'HL' or nowPoint == 'LL'
+                labelText := labelBuy
+                labelText
+        if enableTrendLine
+            point := label.new(t2, labelText, xloc.bar_time, yloc.price, color.new(direction < 0 ? upcolor : dncolor, labels), direction > 0 ? label.style_label_down : label.style_label_up, color.new(direction > 0 ? upcolor : dncolor, labels), label_size)
+            point
+
+    if direction == direction[1]
+        if enableTrendLine
+            line.delete(tl[1])
+            label.delete(point[1])
+    else
+        if enableTrendLine
+            line.set_extend(tl[1], extend.none)
+else
+    if direction != direction[1]
+        if enableTrendLine
+            tl := line.new(t1[1], t2[1], xloc.bar_time, extend.none, color.new(direction > 0 ? upcolor : dncolor, lines), width = line_thick)
+            tl
+        field_1 = t2.price
+        field_2 = t2.price
+        nowPoint := direction[1] < 0 ? field_1[1] < lastPoint[1] ? 'LL' : 'HL' : field_2[1] > lastPoint[1] ? 'HH' : 'LH'
+        labelText = nowPoint
+
+        if nowPoint == 'HH' and enableHH or nowPoint == 'LH' and enableLH or nowPoint == 'HL' and enableHL or nowPoint == 'LL' and enableLL
+            if enableBuySell
+                if nowPoint == 'HH' or nowPoint == 'LH'
+                    labelText := labelSell
+                    labelText
+                else if nowPoint == 'HL' or nowPoint == 'LL'
+                    labelText := labelBuy
+                    labelText
+            if enableTrendLine
+                point := label.new(t2[1], labelText, xloc.bar_time, yloc.price, color.new(direction[1] < 0 ? upcolor : dncolor, labels), direction[1] > 0 ? label.style_label_down : label.style_label_up, color.new(direction[1] > 0 ? upcolor : dncolor, labels), label_size)
+                point
+
+if not enableTrendLine
+    line.delete(tl)
+    label.delete(point)
+
+plotarrow(direction, 'direction', display = display.status_line)
+
+// -Buy/Sell Alerts -------------------------------------------------------------------------------------- //
+buyCondition = direction > 0 and (nowPoint == 'HL' or nowPoint == 'LL')
+sellCondition = direction < 0 and (nowPoint == 'HH' or nowPoint == 'LH')
+
+//alertcondition(buyCondition and enableBuySell, "Buy Signal", 'Buy Signal on {{ticker}} at {{time}}')
+//alertcondition(sellCondition and enableBuySell, "Sell Signal", 'Sell Signal on {{ticker}} at {{time}}')
+
+if direction != direction[1] and input(true, 'Enable Direction Final Alerts')
+    alert((direction < 0 ? 'Bearish' : 'Bullish') + ' Direction Final ', alert.freq_once_per_bar_close)
+    // ══════════════════════════════════════════════════════════════════════════════════════════════════ }
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                                   Linear Regression Channel                                        //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ {
+
+// -Inputs -------------------------------------------------------------------------------------- // 
+tooltip_linReg = 'Linear Regression Channel' + '\nBase Line: A trend line that best represents price movement over a user-defined period (Count), calculated using the least squares method.'
+tooltip_to_linReg_2 = 'Extended Linear Regression Channel with Custom Timeframe' + '\n - Extends the channel by Count * (Higher Timeframe) / (Current Timeframe).' + '\n\n - Important Notes:' + '\n   * Exceeding 5000 iterations may trigger an error ("too many candles in history (5001)").' + '\n     To avoid this, reduce Count or select a 4H or 1H timeframe.' + '\n\n   * If lines are not visible, scroll left on the chart or enable "Shorten Display for Extended Timeframe".' + '\n\n   * Best used on intraday charts.'
+
+group_linReg = 'Price Channel Settings'
+
+i_linreg = input.bool(true, 'PChannelPrice1 ⇨ Count', inline = 'LinReg1', group = group_linReg, tooltip = tooltip_linReg)
+i_linregLength = input.int(135, '', minval = 2, maxval = 5000, inline = 'LinReg1', group = group_linReg)
+i_linregSrc = input.source(close, 'Source', inline = 'LinReg1', group = group_linReg)
+i_linreg2 = input.bool(false, 'PChannelPrice2 ⇨ Count', inline = 'LinReg2', group = group_linReg)
+i_linregLength2 = input.int(50, '', minval = 2, maxval = 5000, inline = 'LinReg2', group = group_linReg)
+i_linregSrc2 = input.source(close, 'Source', inline = 'LinReg2', group = group_linReg)
+i_useTF = input.bool(false, 'PChannel2 : Extend to custom Timeframe (works only with intraday charts)', inline = 'HTF2', group = group_linReg, tooltip = tooltip_to_linReg_2)
+i_htf_user = input.string('4H', '', options = ['1D', '4H', '1H'], inline = 'HTF2', group = group_linReg)
+i_shorten = input.bool(false, 'PChannel2 : Reduce Display when Timeframe Extend Enabled', inline = 'REDUCE', group = group_linReg)
+i_showLast = input.int(500, '', minval = 200, inline = 'SHORT', group = group_linReg)
+
+i_extendLines = input.bool(false, 'Extend Lines       ', inline = 'Lines', group = group_linReg)
+i_trendColor = input.bool(true, 'Trend Colors', inline = 'Lines', group = group_linReg)
+i_channelLevels = input.string('Levels', 'Level Labels', options = ['Levels', 'Levels (Prices)', 'None'], inline = 'Level', group = group_linReg)
+levelTextSize = input.string('Small', '', options = ['Small', 'Normal'], inline = 'Level', group = group_linReg)
+levelOffset = input.int(0, 'Offset', minval = 0, inline = 'Level', group = group_linReg)
+
+
+// -Calculate the slope and intercept of the linear regression channel/curve (bands)-------------------------------------------------------------------------------------- //
+f_CalcSlope(_source, _length) =>
+    max_bars_back(_source, 5000)
+
+    if not barstate.islast
+        [float(na), float(na)]
+    else
+        sumX = 0.0
+        sumY = 0.0
+        sumXSqr = 0.0
+        sumXY = 0.0
+
+        for i = 0 to _length - 1 by 1
+            val = _source[i]
+            per = i + 1.0
+            sumX := sumX + per
+            sumY := sumY + val
+            sumXSqr := sumXSqr + per * per
+            sumXY := sumXY + val * per
+            sumXY
+
+        slope = (_length * sumXY - sumX * sumY) / (_length * sumXSqr - sumX * sumX)
+        intercept = sumY / _length - slope * sumX / _length + slope
+
+        [slope, intercept]
+
+f_CalcDev(_source, _length, _slope, _intercept) =>
+    stdDevAcc = 0.0
+    periods = _length - 1
+    val = _intercept
+
+    for i = 0 to periods by 1
+        price = _source[i]
+        price := price - val
+        stdDevAcc := stdDevAcc + price * price
+        val := val + _slope
+        val
+
+    stdDev = math.sqrt(stdDevAcc / periods)
+    stdDev
+
+[slope, intercept] = f_CalcSlope(i_linregSrc, i_linregLength)
+stdDev = f_CalcDev(i_linregSrc, i_linregLength, slope, intercept)
+startPrice = intercept + slope * (i_linregLength - 1)
+endPrice = intercept
+
+htf_multiplier = i_htf_user == '1H' ? 60 : i_htf_user == '4H' ? 240 : i_htf_user == '1D' ? 1440 : na
+linregLength2 = i_useTF and timeframe.isintraday and htf_multiplier > timeframe.multiplier ? i_linregLength2 * htf_multiplier / timeframe.multiplier : i_linregLength2
+
+[slope2, intercept2] = f_CalcSlope(i_linregSrc2, linregLength2)
+stdDev2 = f_CalcDev(i_linregSrc2, linregLength2, slope2, intercept2)
+startPrice2 = intercept2 + slope2 * (i_shorten and i_useTF and i_showLast < linregLength2 ? i_showLast : linregLength2 - 1)
+endPrice2 = intercept2
+
+// -Plotting ------------------------------------------------------------------------------------ //
+f_CrossingLevel(_curret, _level) =>
+    _level > _curret and _level < _curret[1] or _level < _curret and _level > _curret[1]
+
+f_DrawLine(_iStart, _pStart, _iEnd, _pEnd, _color, _width, _style, _extend) =>
+    style = _style == 'Solid' ? line.style_solid : _style == 'Dotted' ? line.style_dotted : _style == 'Dashed' ? line.style_dashed : line.style_arrow_right
+    var linReg = line.new(_iStart, _pStart, _iEnd, _pEnd, xloc.bar_index, _extend ? extend.right : extend.none, _color, style, _width)
+    line.set_xy1(linReg, _iStart, _pStart)
+    line.set_xy2(linReg, _iEnd, _pEnd)
+    line.set_color(linReg, _color)
+
+processLinRegLevel(_show, _level, _colorL, _widthL, _styleL, _linReg, _which) =>
+    if _show and _linReg
+        pStart = _which ? startPrice : startPrice2
+        pEnd = _which ? endPrice : endPrice2
+        dev = _which ? stdDev : stdDev2
+        length = _which ? i_linregLength : i_shorten and i_useTF and i_showLast < linregLength2 ? i_showLast : linregLength2
+        lrColor = i_trendColor ? pStart > pEnd ? color.red : color.green : _colorL
+
+        f_DrawLine(bar_index - length + 1, pStart + _level * dev, bar_index, pEnd + _level * dev, lrColor, _widthL, _styleL, i_extendLines)
+        f_DrawLine(bar_index - length + 1, pStart - _level * dev, bar_index, pEnd - _level * dev, lrColor, _widthL, _styleL, i_extendLines)
+
+        if levelOffset > 9
+            f_DrawLine(bar_index + 3, pEnd + _level * dev, bar_index + levelOffset, pEnd + _level * dev, lrColor, 1, 'Arrow', false)
+            f_DrawLine(bar_index + 3, pEnd - _level * dev, bar_index + levelOffset, pEnd - _level * dev, lrColor, 1, 'Arrow', false)
+
+        if f_CrossingLevel(close, pEnd + _level * dev)
+            alert('LinRegChannel: ' + syminfo.ticker + ' crossing' + ' Linear Regression Standart Deviation Upper Line ' + str.tostring(_level) + ' : ' + str.tostring(pEnd + _level * dev, format.mintick))
+
+        if f_CrossingLevel(close, pEnd - _level * dev)
+            alert('LinRegChannel: ' + syminfo.ticker + ' crossing' + ' Linear Regression Standart Deviation Lower Line ' + str.tostring(_level) + ' : ' + str.tostring(pEnd - _level * dev, format.mintick))
+
+i_lrcolor_m = input.color(#f44336, 'PChannel Median 1       ', inline = 'lrLine', group = group_linReg)
+i_lrstyle_m = input.string('Solid', '', options = ['Dashed', 'Dotted', 'Solid'], inline = 'lrLine', group = group_linReg)
+i_lrwidth_m = input.int(3, '', minval = 1, inline = 'lrLine', group = group_linReg)
+
+if i_linreg
+    f_DrawLine(bar_index - i_linregLength + 1, startPrice, bar_index, endPrice, i_trendColor ? startPrice > endPrice ? color.red : color.green : i_lrcolor_m, i_lrwidth_m, i_lrstyle_m, i_extendLines)
+
+    if levelOffset > 9
+        f_DrawLine(bar_index + 3, endPrice, bar_index + levelOffset, endPrice, i_lrcolor_m, 1, 'Arrow', false)
+
+    if f_CrossingLevel(close, endPrice)
+        alert('LinRegChannel: ' + syminfo.ticker + ' crossing 1ST Linear Regression Base Line : ' + str.tostring(endPrice, format.mintick))
+
+i_lrshow_1 = input.bool(true, 'StdDev', inline = 'lrLevel_1', group = group_linReg)
+i_lrvalue_1 = input.float(1., '', minval = 0, step = .1, inline = 'lrLevel_1', group = group_linReg)
+i_lrcolor_1 = input.color(#2196f3, '', inline = 'lrLevel_1', group = group_linReg)
+i_lrstyle_1 = input.string('Dashed', '', options = ['Dashed', 'Dotted', 'Solid'], inline = 'lrLevel_1', group = group_linReg)
+i_lrwidth_1 = input.int(1, '', minval = 1, inline = 'lrLevel_1', group = group_linReg)
+processLinRegLevel(i_lrshow_1, i_lrvalue_1, i_lrcolor_1, i_lrwidth_1, i_lrstyle_1, i_linreg, true)
+
+i_lrshow_2 = input.bool(true, 'StdDev', inline = 'lrLevel_2', group = group_linReg)
+i_lrvalue_2 = input.float(2., '', minval = 1, step = .1, inline = 'lrLevel_2', group = group_linReg)
+i_lrcolor_2 = input.color(#2196f3, '', inline = 'lrLevel_2', group = group_linReg)
+i_lrstyle_2 = input.string('Solid', '', options = ['Dashed', 'Dotted', 'Solid'], inline = 'lrLevel_2', group = group_linReg)
+i_lrwidth_2 = input.int(2, '', minval = 1, inline = 'lrLevel_2', group = group_linReg)
+processLinRegLevel(i_lrshow_2, i_lrvalue_2, i_lrcolor_2, i_lrwidth_2, i_lrstyle_2, i_linreg, true)
+
+i_lrshow_3 = input.bool(true, 'StdDev', inline = 'lrLevel_3', group = group_linReg)
+i_lrvalue_3 = input.float(3., '', minval = 2, step = .1, inline = 'lrLevel_3', group = group_linReg)
+i_lrcolor_3 = input.color(#2196f3, '', inline = 'lrLevel_3', group = group_linReg)
+i_lrstyle_3 = input.string('Dotted', '', options = ['Dashed', 'Dotted', 'Solid'], inline = 'lrLevel_3', group = group_linReg)
+i_lrwidth_3 = input.int(2, '', minval = 1, inline = 'lrLevel_3', group = group_linReg)
+processLinRegLevel(i_lrshow_3, i_lrvalue_3, i_lrcolor_3, i_lrwidth_3, i_lrstyle_3, i_linreg, true)
+
+i_2lrcolor_m = input.color(#ff9800, 'PChannel Median 2      ', inline = '2lrLine', group = group_linReg)
+i_2lrstyle_m = input.string('Solid', '', options = ['Dashed', 'Dotted', 'Solid'], inline = '2lrLine', group = group_linReg)
+i_2lrwidth_m = input.int(3, '', minval = 1, inline = '2lrLine', group = group_linReg)
+
+if i_linreg2
+    f_DrawLine(bar_index - (i_shorten and i_useTF and i_showLast < linregLength2 ? i_showLast : linregLength2) + 1, startPrice2, bar_index, endPrice2, i_trendColor ? startPrice2 > endPrice2 ? color.red : color.green : i_2lrcolor_m, i_2lrwidth_m, i_2lrstyle_m, i_extendLines)
+
+    if levelOffset > 9
+        f_DrawLine(bar_index + 3, endPrice2, bar_index + levelOffset, endPrice2, i_2lrcolor_m, 1, 'Arrow', false)
+
+    if f_CrossingLevel(close, endPrice2)
+        alert('LinRegChannel: ' + syminfo.ticker + ' crossing 2ND Linear Regression Base Line : ' + str.tostring(endPrice2, format.mintick))
+
+i_2lrshow_1 = input.bool(true, 'StdDev', inline = '2lrLevel_1', group = group_linReg)
+i_2lrvalue_1 = input.float(1., '', minval = 0, step = .1, inline = '2lrLevel_1', group = group_linReg)
+i_2lrcolor_1 = input.color(#00bcd4, '', inline = '2lrLevel_1', group = group_linReg)
+i_2lrstyle_1 = input.string('Dashed', '', options = ['Dashed', 'Dotted', 'Solid'], inline = '2lrLevel_1', group = group_linReg)
+i_2lrwidth_1 = input.int(1, '', minval = 1, inline = '2lrLevel_1', group = group_linReg)
+processLinRegLevel(i_2lrshow_1, i_2lrvalue_1, i_2lrcolor_1, i_2lrwidth_1, i_2lrstyle_1, i_linreg2, false)
+
+i_2lrshow_2 = input.bool(true, 'StdDev', inline = '2lrLevel_2', group = group_linReg)
+i_2lrvalue_2 = input.float(2., '', minval = 1, step = .1, inline = '2lrLevel_2', group = group_linReg)
+i_2lrcolor_2 = input.color(#00bcd4, '', inline = '2lrLevel_2', group = group_linReg)
+i_2lrstyle_2 = input.string('Solid', '', options = ['Dashed', 'Dotted', 'Solid'], inline = '2lrLevel_2', group = group_linReg)
+i_2lrwidth_2 = input.int(2, '', minval = 1, inline = '2lrLevel_2', group = group_linReg)
+processLinRegLevel(i_2lrshow_2, i_2lrvalue_2, i_2lrcolor_2, i_2lrwidth_2, i_2lrstyle_2, i_linreg2, false)
+
+i_2lrshow_3 = input.bool(true, 'StdDev', inline = '2lrLevel_3', group = group_linReg)
+i_2lrvalue_3 = input.float(3., '', minval = 2, step = .1, inline = '2lrLevel_3', group = group_linReg)
+i_2lrcolor_3 = input.color(#00bcd4, '', inline = '2lrLevel_3', group = group_linReg)
+i_2lrstyle_3 = input.string('Dotted', '', options = ['Dashed', 'Dotted', 'Solid'], inline = '2lrLevel_3', group = group_linReg)
+i_2lrwidth_3 = input.int(2, '', minval = 1, inline = '2lrLevel_3', group = group_linReg)
+processLinRegLevel(i_2lrshow_3, i_2lrvalue_3, i_2lrcolor_3, i_2lrwidth_3, i_2lrstyle_3, i_linreg2, false)
+
+group_linReg_Curve = 'PChannel Curve Settings'
+i_showCurve = input.bool(true, 'Linear Regression Curve      |     Length', inline = 'Curve', group = group_linReg_Curve)
+i_linregCurveL = input.int(50, '', inline = 'Curve', group = group_linReg_Curve)
+i_lrcolorCurve = input.color(#872323, '', inline = 'Curve', group = group_linReg_Curve)
+
+i_showCurveBand = input.bool(false, 'PChannel Curve Bands           ', inline = 'Bands', group = group_linReg_Curve)
+i_lrcolorBand1 = input.color(#00897b, '1', inline = 'Bands', group = group_linReg_Curve)
+i_lrcolorBand2 = input.color(#00897b, '2', inline = 'Bands', group = group_linReg_Curve)
+i_lrcolorBand3 = input.color(#00897b, '3', inline = 'Bands', group = group_linReg_Curve)
+i_showCurveBTyp = input.string('StdDev', 'Bands', options = ['StdDev', 'ATR'], inline = 'Bands2', group = group_linReg_Curve)
+i_linregCurveBL = input.int(21, '   StdDev', inline = 'Bands2', group = group_linReg_Curve)
+i_linregCurveAL = input.int(13, 'ATR', inline = 'Bands2', group = group_linReg_Curve)
+
+group_linReg_Slope = 'PChannel Slope Settings'
+
+i_showSlope = input.bool(false, 'PChannel Slope  |  Length', inline = 'Slope', group = group_linReg_Slope)
+i_linregSlopeL = input.int(5, '', inline = 'Slope', group = group_linReg_Slope)
+i_lrcolorSlopeU = input.color(color.new(#06bad1, 50), '', inline = 'Slope', group = group_linReg_Slope)
+i_lrcolorSlopeD = input.color(color.new(#f57f17, 50), '', inline = 'Slope', group = group_linReg_Slope)
+
+dev = i_showCurveBTyp == 'StdDev' ? ta.stdev(i_linregSrc, i_linregCurveBL) : ta.atr(i_linregCurveAL)
+lrc = ta.linreg(i_linregSrc, i_linregCurveL, 0)
+
+plot(i_showCurve ? lrc : na, 'LRC', i_lrcolorCurve, 3, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc + 1 * dev : na, 'LRC Band StdDev 1', i_lrcolorBand1, 1, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc - 1 * dev : na, 'LRC Band StdDev 1', i_lrcolorBand1, 1, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc + 2 * dev : na, 'LRC Band StdDev 2', i_lrcolorBand2, 1, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc - 2 * dev : na, 'LRC Band StdDev 2', i_lrcolorBand2, 1, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc + 3 * dev : na, 'LRC Band StdDev 3', i_lrcolorBand3, 1, show_last = 3 * i_linregLength)
+plot(i_showCurve and i_showCurveBand ? lrc - 3 * dev : na, 'LRC Band StdDev 3', i_lrcolorBand3, 1, show_last = 3 * i_linregLength)
+
+plotarrow(i_showSlope ? ta.correlation(close, bar_index, i_linregSlopeL) * ta.stdev(close, i_linregSlopeL) / ta.stdev(bar_index, i_linregSlopeL) : na, 'Linear Regression Slope', i_lrcolorSlopeU, i_lrcolorSlopeD, show_last = 3 * i_linregLength)
+
+// -Volume / Volatility AddOns -------------------------------------------------------------------------------------- // 
+var table LogoAlert = table.new(position.bottom_right, 1, 1)
+
+if barstate.islast
+    table.cell(LogoAlert, 0, 0, '☼☾  ', text_size = size.normal, text_color = #2a6ece)
+
+// -Inputs -------------------------------------------------------------------------------------- //
+group_vol_vol = 'Volume / Volatility Add Ons'
+tooltip_high_volatility = 'Moments where\n' + 'price range of the current bar is grater than the product of the theshold value and average true range value of defined period'
+tooltip_volume_weighted_colored_bars = 'Volume Weighted Colored Bars\n' + 'Colors bars based on the bar\'s volume relative to volume moving average'
+
+// -Volume Moving Average : Base ----------------------------------------------------------------- // 
+i_vSMA = ta.sma(nz(volume), input.int(150, 'Volume Moving Average Length', group = group_vol_vol))
+
+// -Volume Weighted Colored Bars inputs ----------------------------------------------------------------- //
+i_vwcb = input.bool(false, '', inline = 'VWC', group = group_vol_vol, tooltip = tooltip_volume_weighted_colored_bars)
+i_vwcbHighThresh = input.float(1.618, 'VWCB Thesholds :  High ', minval = 1., step = .1, inline = 'VWC', group = group_vol_vol)
+i_vwcbLowThresh = input.float(0.618, '  Low', minval = .1, step = .1, inline = 'VWC', group = group_vol_vol)
+
+// -Calculations ------------------------------------------------------------------- //
+nzVolume = nz(volume)
+bullCandle = close > open
+bearCandle = close < open
+range_1 = math.abs(high - low)
+
+// -VWCB a part Plotting ---------------------------------------------- //
+vwcbCol = nzVolume > i_vSMA * i_vwcbHighThresh ? bullCandle ? #006400 : #910000 : nzVolume < i_vSMA * i_vwcbLowThresh ? bearCandle ? #FF9800 : #7FFFD4 : na
+barcolor(i_vwcb and nzVolume > 0 ? vwcbCol : na, title = 'Volume Weighted Colored Bars', show_last = 3 * i_linregLength)
+
+// This section replaces the "Strategy Functional include First iterations" part of your code
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                               Strategy Functional                                                 //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ {
+
+Strategy_Settings = 'Strategy Manage Position'
+// Input parameters for customization
+input_stop_loss_percent = input.int(5, 'Stop-Loss %', group = Strategy_Settings, minval = 1)
+input_breakeven_offset = input.float(0.25, 'Breakeven Offset %', group = Strategy_Settings, minval = 0.1)
+input_open_percent = input.float(10, 'Initial Position Open %', group = Strategy_Settings, minval = 1, maxval = 100)
+
+Manage_Settings = 'Position Size'
+toggle_contracts = input.bool(true, '-', inline = 'Position Size in Contracts', group = Manage_Settings)
+input_position_size = input.int(13500, 'Planned Position Size in Contracts', inline = 'Position Size in Contracts', group = Manage_Settings, minval = 1)
+
+Signal_Settings = 'Signal Configuration'
+
+// Entry signal configuration
+entry_signals_label = input.string('Entry Signals:', group = Signal_Settings, inline = 'entry_label')
+toggle_early_signal_entry = input.bool(false, 'Early', inline = 'entry_signals', group = Signal_Settings)
+toggle_strong_signal_entry = input.bool(true, 'Strong', inline = 'entry_signals', group = Signal_Settings)
+toggle_super_signal_entry = input.bool(true, 'Super', inline = 'entry_signals', group = Signal_Settings)
+toggle_lrc_cross_signal_entry = input.bool(true, 'LRC Cross', inline = 'entry_signals2', group = Signal_Settings)
+
+// Add new toggle inputs for the LRC cross entry filter
+toggle_lrc_cross_entry = input.bool(true, 'Apply LRC Cross Filter', inline = 'entry_signals2', group = Signal_Settings)
+
+// Toggle for LRC Cross signal type
+toggle_lrc_simple = input.bool(false, 'Use Simple LRC Cross', inline = 'entry_signals2', group = Signal_Settings)
+
+// Define LRC cross signals - original with band conditions
+lrcCrossLongOriginal = ta.crossover(close, lrc) and close <= lb1
+lrcCrossShortOriginal = ta.crossunder(close, lrc) and close >= ub1
+
+// Define simple LRC cross signals - without band conditions
+lrcCrossLongSimple = ta.crossover(close, lrc)
+lrcCrossShortSimple = ta.crossunder(close, lrc)
+
+// Select which LRC cross signal to use
+lrcCrossLong = toggle_lrc_simple ? lrcCrossLongSimple : lrcCrossLongOriginal
+lrcCrossShort = toggle_lrc_simple ? lrcCrossShortSimple : lrcCrossShortOriginal
+
+// Exit signal configuration
+exit_signals_label = input.string('Exit Signals:', group = Signal_Settings, inline = 'exit_label')
+toggle_early_signal_exit = input.bool(false, 'Early', inline = 'exit_signals', group = Signal_Settings)
+toggle_strong_signal_exit = input.bool(false, 'Strong', inline = 'exit_signals', group = Signal_Settings)
+toggle_super_signal_exit = input.bool(false, 'Super', inline = 'exit_signals', group = Signal_Settings)
+toggle_regression_flip_exit = input.bool(false, 'LinReg Flip', inline = 'exit_signals', group = Signal_Settings)
+toggle_profit_percent_exit = input.bool(true, 'Profit %', inline = 'exit_signals2', group = Signal_Settings)
+input_profit_percent_threshold = input.float(1.0, 'Threshold', minval = 0.0, maxval = 100.0, step = 0.1, inline = 'exit_signals2', group = Signal_Settings)
+
+// Signal sizing configuration
+toggle_early_signal_add = input.bool(true, '-', inline = 'Early', group = Strategy_Settings)
+toggle_strong_signal_add = input.bool(true, '-', inline = 'Strong', group = Strategy_Settings)
+toggle_super_signal_add = input.bool(true, '-', inline = 'Super', group = Strategy_Settings)
+toggle_lrc_cross_signal_add = input.bool(true, '-', inline = 'LRC Cross', group = Strategy_Settings)
+
+input_early_signal_addition = input.int(10, 'Early Signal Addition %', inline = 'Early', group = Strategy_Settings, minval = 0, maxval = 100)
+input_strong_signal_addition = input.int(20, 'Strong Signal Addition %', inline = 'Strong', group = Strategy_Settings, minval = 0, maxval = 100)
+input_super_signal_addition = input.int(25, 'Super Signal Addition %', inline = 'Super', group = Strategy_Settings, minval = 0, maxval = 100)
+input_lrc_cross_signal_addition = input.int(15, 'LRC Cross Signal Addition %', inline = 'LRC Cross', group = Strategy_Settings, minval = 0, maxval = 100)
+
+// Debug settings
+show_debug_labels = input.bool(true, 'Show Signal Labels', group = 'Debug Settings')
+toggle_plot_signals = input.bool(true, 'Plot All Signals', group = 'Debug Settings')
+lrc_cross_color = input.color(#000000, "LRC Cross Signal Color", group = 'Debug Settings')
+
+// Toggle for showing the table
+input_show_table = input.bool(true, 'Show Trade Info Table', group = Strategy_Settings)
+
+// Realtime trading prevention
+toggle_realtime_only = input.bool(true, 'Only Trade in Realtime', group = Strategy_Settings)
+
+// Direction trading controls
+toggle_allow_long = input.bool(true, 'Allow Long Trades', group = Strategy_Settings)
+toggle_allow_short = input.bool(true, 'Allow Short Trades', group = Strategy_Settings)
+
+input_max_position_size = 1.2 // 120% limit for position scaling
+
+// Variables to track regression direction
+var float entry_regression_slope = na
+var bool regression_direction_changed = false
+
+// Signal conditions using indicators
+pEnd = endPrice
+priceOutOfReg = close < pEnd - i_lrvalue_2 * stdDev or close > pEnd + i_lrvalue_2 * stdDev
+earlyLongCondition = close < pEnd - i_lrvalue_2 * stdDev
+earlyShortCondition = close > pEnd + i_lrvalue_2 * stdDev
+priceInCloud = close > lb1 and close < ub1
+
+// Breakout conditions
+earlyLong = earlyLongCondition and priceInCloud
+earlyShort = earlyShortCondition and priceInCloud
+lowerBreakCondition = close < lb1 and close < pEnd - i_lrvalue_2 * stdDev
+upperBreakCondition = close > ub1 and close > pEnd + i_lrvalue_2 * stdDev
+
+// Super signal detection - UPDATED to include price being in relevant bands
+priceInDottedLineLong = low < endPrice - i_lrvalue_3 * stdDev and low < lb1
+priceInDottedLineShort = high > endPrice + i_lrvalue_3 * stdDev and high > ub1
+
+
+// State variables to track if we've seen an LRC cross event
+var bool lrcLongAllowEntry = false
+var bool lrcShortAllowEntry = false
+var int lrcLongEventBar = 0
+var int lrcShortEventBar = 0
+
+// Position tracking variables
+var float weighted_sum_price = na
+var float total_valid_size = na
+var float avg_entry_price = na
+var float last_entry_price = na
+var int last_entry_bar_index = na
+var string lastSignalReason = 'None'
+var int position_counter = 0 // Added counter for debugging position IDs
+
+// Position state variables
+isLong = strategy.position_size > 0
+isShort = strategy.position_size < 0
+position_limit_reached = math.abs(strategy.position_size) >= input_max_position_size * input_position_size
+
+// Signal availability flags for entry, exit, and position additions
+can_use_early_entry = toggle_early_signal_entry
+can_use_strong_entry = toggle_strong_signal_entry
+can_use_super_entry = toggle_super_signal_entry
+can_use_lrc_cross_signal_entry = toggle_lrc_cross_signal_entry
+
+can_use_early_exit = toggle_early_signal_exit
+can_use_strong_exit = toggle_strong_signal_exit
+can_use_super_exit = toggle_super_signal_exit
+
+can_use_early_add = toggle_early_signal_add
+can_use_strong_add = toggle_strong_signal_add
+can_use_super_add = toggle_super_signal_add
+can_use_lrc_cross_signal_add = toggle_lrc_cross_signal_add
+
+// All possible entry signals - NEW comprehensive signal detection
+
+// Long signals
+earlyLongSignal = earlyLong and can_use_early_entry
+strongLongSignal = lowerBreakCondition and can_use_strong_entry
+superLongSignal = priceInDottedLineLong and can_use_super_entry
+lrcCrossLongSignal = lrcCrossLong and can_use_lrc_cross_signal_entry
+
+// Short signals
+earlyShortSignal = earlyShort and can_use_early_entry
+strongShortSignal = upperBreakCondition and can_use_strong_entry
+superShortSignal = priceInDottedLineShort and can_use_super_entry //
+lrcCrossShortSignal = lrcCrossShort and can_use_lrc_cross_signal_entry
+
+// Combined signals for any initial entry based on configured entry signals
+anyLongSignal = earlyLongSignal and toggle_early_signal_entry or strongLongSignal and toggle_strong_signal_entry or superLongSignal and toggle_super_signal_entry or lrcCrossLongSignal and toggle_lrc_cross_signal_entry
+
+anyShortSignal = earlyShortSignal and toggle_early_signal_entry or strongShortSignal and toggle_strong_signal_entry or superShortSignal and toggle_super_signal_entry or lrcCrossShortSignal and toggle_lrc_cross_signal_entry
+
+// Realtime trading check
+isRealtimeAllowed = not toggle_realtime_only or barstate.isrealtime
+
+// Direction trading checks
+isLongAllowed = toggle_allow_long
+isShortAllowed = toggle_allow_short
+
+// Update state variables when LRC cross events occur
+if lrcCrossLong
+    lrcLongAllowEntry := true
+    lrcLongEventBar := bar_index
+    // Optionally, reset the opposite state
+    lrcShortAllowEntry := false
+
+if lrcCrossShort
+    lrcShortAllowEntry := true
+    lrcShortEventBar := bar_index
+    // Optionally, reset the opposite state
+    lrcLongAllowEntry := false
+
+if lrcLongAllowEntry and high >= ub1
+    lrcLongAllowEntry := false
+
+if lrcShortAllowEntry and low <= lb1
+    lrcShortAllowEntry := false
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                               EXIT LOGIC                                                   //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// Add new input parameters for RVWAP exit and band1 exit
+toggle_rvwap_exit = input.bool(true, 'RVWAP Cross', inline = 'exit_signals', group = Signal_Settings)
+toggle_band1_exit = input.bool(false, 'Band1 Cross', inline = 'exit_signals2', group = Signal_Settings)
+toggle_lrc_cross_exit = input.bool(false, 'LRC Cross', inline = 'exit_signals', group = Signal_Settings)
+
+// Calculate stop loss levels when we have a position
+stopLossLong = avg_entry_price * (1 - input_stop_loss_percent / 100)
+stopLossShort = avg_entry_price * (1 + input_stop_loss_percent / 100)
+
+// Stop loss conditions
+stopLossLongHit = isLong and low <= stopLossLong
+stopLossShortHit = isShort and high >= stopLossShort
+
+// Exit signal conditions
+earlyLongExit = earlyLong and toggle_early_signal_exit
+earlyShortExit = earlyShort and toggle_early_signal_exit
+strongLongExit = lowerBreakCondition and toggle_strong_signal_exit
+strongShortExit = upperBreakCondition and toggle_strong_signal_exit
+superLongExit = priceInDottedLineLong and toggle_super_signal_exit
+superShortExit = priceInDottedLineShort and toggle_super_signal_exit
+
+// Additional exit conditions
+lrcCrossExitLong = isLong and ta.crossunder(close, lrc) and toggle_lrc_cross_exit and (open >= ub1 or close >= ub1)
+lrcCrossExitShort = isShort and ta.crossover(close, lrc) and toggle_lrc_cross_exit and (open <= lb1 or close <= lb1)
+
+regressionFlipExitLong = isLong and regression_direction_changed and toggle_regression_flip_exit and close > pEnd + i_lrvalue_1 * stdDev
+regressionFlipExitShort = isShort and regression_direction_changed and toggle_regression_flip_exit and close < pEnd - i_lrvalue_1 * stdDev
+
+rvwapExitLong = isLong and close >= rvwap and toggle_rvwap_exit
+rvwapExitShort = isShort and close <= rvwap and toggle_rvwap_exit
+
+band1ExitLong = isLong and close >= ub1 and toggle_band1_exit
+band1ExitShort = isShort and close <= lb1 and toggle_band1_exit
+
+// Profit percentage exit conditions
+profitPercentLong = isLong and toggle_profit_percent_exit and not na(avg_entry_price) and ((close - avg_entry_price) / avg_entry_price * 100) >= input_profit_percent_threshold
+profitPercentShort = isShort and toggle_profit_percent_exit and not na(avg_entry_price) and ((avg_entry_price - close) / avg_entry_price * 100) >= input_profit_percent_threshold
+
+// Consolidated exit conditions
+exitLongSignal = isLong and (earlyShortExit or strongShortExit or superShortExit or regressionFlipExitLong or rvwapExitLong or band1ExitLong or lrcCrossExitLong or profitPercentLong)
+exitShortSignal = isShort and (earlyLongExit or strongLongExit or superLongExit or regressionFlipExitShort or rvwapExitShort or band1ExitShort or lrcCrossExitShort or profitPercentShort)
+
+// Determine exit reason for logging
+var string exitReason = na
+
+// Set exit reason based on which condition triggered
+if exitLongSignal
+    exitReason := earlyShortExit ? 'Early Short Signal' : 
+                  strongShortExit ? 'Strong Short Signal' : 
+                  superShortExit ? 'Super Short Signal' : 
+                  regressionFlipExitLong ? 'LinReg Flip Exit' : 
+                  rvwapExitLong ? 'RVWAP Exit' : 
+                  band1ExitLong ? 'Band1 Exit' : 
+                  lrcCrossExitLong ? 'LRC Cross Exit' : 
+                  profitPercentLong ? 'Profit' : 'Unknown Long Exit'
+
+if exitShortSignal  
+    exitReason := earlyLongExit ? 'Early Long Signal' : 
+                  strongLongExit ? 'Strong Long Signal' : 
+                  superLongExit ? 'Super Long Signal' : 
+                  regressionFlipExitShort ? 'LinReg Flip Exit' : 
+                  rvwapExitShort ? 'RVWAP Exit' : 
+                  band1ExitShort ? 'Band1 Exit' : 
+                  lrcCrossExitShort ? 'LRC Cross Exit' : 
+                  profitPercentShort ? 'Profit' : 'Unknown Short Exit'
+
+if stopLossLongHit
+    exitReason := 'Stop Loss Long'
+
+if stopLossShortHit
+    exitReason := 'Stop Loss Short'
+
+// Long position exit
+if (exitLongSignal or stopLossLongHit) and strategy.position_size > 0 and isRealtimeAllowed and isLongAllowed
+    strategy.close_all("Exit Long: " + exitReason)
+    
+    // COMPLETE STATE RESET - ALL VARIABLES RESET IN ONE BLOCK
+    weighted_sum_price := na
+    total_valid_size := na
+    avg_entry_price := na
+    last_entry_price := na
+    last_entry_bar_index := na
+    entry_regression_slope := na
+    regression_direction_changed := false
+    lrcLongAllowEntry := false
+    lrcShortAllowEntry := false
+    lastSignalReason := exitReason
+    
+    if show_debug_labels
+        label.new(bar_index, high + high *0.001 , "EXIT LONG: " + exitReason, color = color.red, style = label.style_label_down, size = size.small)
+
+// Short position exit  
+if (exitShortSignal or stopLossShortHit) and strategy.position_size < 0 and isRealtimeAllowed and isShortAllowed
+    strategy.close_all("Exit Short: " + exitReason)
+    
+    // COMPLETE STATE RESET - ALL VARIABLES RESET IN ONE BLOCK
+    weighted_sum_price := na
+    total_valid_size := na
+    avg_entry_price := na
+    last_entry_price := na
+    last_entry_bar_index := na
+    entry_regression_slope := na
+    regression_direction_changed := false
+    lrcLongAllowEntry := false
+    lrcShortAllowEntry := false
+    lastSignalReason := exitReason
+    
+    if show_debug_labels
+        label.new(bar_index, low - low * 0.001, "EXIT SHORT: " + exitReason, color = color.green, style = label.style_label_up, size = size.small)
+
+
+// Plot stop loss levels when there's an active position
+plot(strategy.position_size > 0 ? stopLossLong : na, title = 'Long Stop Loss', color = color.red, style = plot.style_steplinebr, linewidth = 1)
+plot(strategy.position_size < 0 ? stopLossShort : na, title = 'Short Stop Loss', color = color.green, style = plot.style_steplinebr, linewidth = 1)
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                               Strategy Entry                                                       //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// Long entry with proper flag setting and position checking
+if strategy.position_size == 0 and anyLongSignal
+    // Check if LRC filter is enabled and if a long event has been detected
+    lrcFilterPassed = not toggle_lrc_cross_entry or lrcLongAllowEntry
+    signalType = earlyLongSignal ? 'Early' : strongLongSignal ? 'Strong' : superLongSignal ? 'Super' : 'LRC Cross'
+    
+    // For LONG entry - replace the existing strategy.entry() block:
+    if lrcFilterPassed and isRealtimeAllowed and isLongAllowed
+        // Increment counter for new position ID
+        position_counter := position_counter + 1
+
+        if show_debug_labels
+            labelColor = earlyLongSignal ? color.green : strongLongSignal ? color.lime : superLongSignal ? color.blue : color.yellow
+            label.new(bar_index, low - low * 0.002, signalType + ' Long Entry #' + str.tostring(position_counter), color = labelColor, style = label.style_label_up)
+        
+        _qty = input_position_size * (input_open_percent / 100)
+        
+        strategy.entry("Initial_Long_" + str.tostring(position_counter), strategy.long, qty = _qty, comment = signalType + " Long Entry " + str.tostring(position_counter))
+    else if show_debug_labels and toggle_lrc_cross_entry
+        // label.new(bar_index, low, signalType + ' Long No LRC Cross', color = color.gray, style = label.style_label_up)
+        label.new(bar_index, low - low * 0.002, 'No LRC', color = color.gray, textcolor = color.black, style = label.style_label_up)
+// Short entry with proper flag setting and position checking
+if strategy.position_size == 0 and anyShortSignal
+    // Check if LRC filter is enabled and if a short event has been detected
+    lrcFilterPassed = not toggle_lrc_cross_entry or lrcShortAllowEntry
+    signalType = earlyShortSignal ? 'Early' : strongShortSignal ? 'Strong' : superShortSignal ? 'Super' : 'LRC Cross'
+
+   // For SHORT entry - replace the existing strategy.entry() block:
+    if lrcFilterPassed and isRealtimeAllowed and isShortAllowed
+        // Increment counter for new position ID
+        position_counter := position_counter + 1
+        
+        if show_debug_labels
+            labelColor = earlyShortSignal ? color.red : strongShortSignal ? color.orange : superShortSignal ? color.purple : color.yellow
+            label.new(bar_index, high + high * 0.002, signalType + ' Short Entry #' + str.tostring(position_counter), color = labelColor, style = label.style_label_down)
+
+        _qty = input_position_size * (input_open_percent / 100)
+        strategy.entry("Initial_Short_" + str.tostring(position_counter), strategy.short, qty = _qty, comment = signalType + " Short Entry " + str.tostring(position_counter))
+    else if show_debug_labels and toggle_lrc_cross_entry
+        // label.new(bar_index, high, signalType + ' Short No LRC Cross', color = color.gray, style = label.style_label_down)
+        label.new(bar_index, high + high * 0.002, 'No LRC', color = color.gray, textcolor = color.black, style = label.style_label_down)
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                     Position Addition Logic with LRC Filter                                         //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// Array to track additions per bar for each signal type
+varip array<string> currentBarAdditions = array.new<string>()
+stringifyArray(ar) =>
+    arrayString = ""
+    if array.size(ar) > 0
+        for i = 0 to array.size(ar) - 1
+            arrayString := arrayString + array.get(ar, i)
+            if i < array.size(ar) - 1
+                arrayString := arrayString + ", "
+        arrayString
+    else
+        "EMPTY"  
+
+varip int executionCounter = 0
+modeText = barstate.isrealtime ? "REALTIME" : barstate.islast ? "REPLAY" : "HISTORICAL"
+varip string stringCurrentBarAdditions = stringifyArray(currentBarAdditions)
+log.info("BAR EVENT #{0} - Mode: {1}, Bar: {2}, Confirm: {3}, CurrSignalListUsed: {4}", executionCounter + 1, modeText, bar_index, barstate.isconfirmed, stringCurrentBarAdditions)
+
+  
+// Reset the array at the start of each new bar
+executionCounter := executionCounter + 1
+if barstate.isconfirmed
+    executionCounter := 0
+    arr = stringifyArray(currentBarAdditions)
+    log.info("Signals List: " + arr)
+    array.clear(currentBarAdditions)
+
+// Helper function to check if signal type was already used for addition on current bar
+canAddSignal(signalType) =>
+    not array.includes(currentBarAdditions, signalType)
+
+// Helper function to record signal addition
+recordSignalAddition(signalType) =>
+    log.info("Fired Signal: " + signalType)
+    array.push(currentBarAdditions, signalType)
+
+// Position addition logic using strategy.order() instead of strategy.entry()
+if strategy.position_size != 0 and not position_limit_reached
+    // Long position addition
+    if isLong
+        // Check for additional signals to add to position and verify better price
+        if earlyLongSignal and can_use_early_add and close < last_entry_price and canAddSignal("Early")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcLongAllowEntry
+            _qty = input_position_size * (input_early_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, low - low * 0.002, 'Early Long +' + str.tostring(_qty), color = color.green, textcolor = color.black, style = label.style_label_up)
+
+            if lrcFilterPassed and isRealtimeAllowed and isLongAllowed
+                strategy.order("Early_Long_Add", strategy.long, qty = _qty, comment = "Early Long Add")
+                recordSignalAddition("Early")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, low, "Early Wait LRC", color = color.gray, style = label.style_label_up)
+
+        if strongLongSignal and can_use_strong_add and close < last_entry_price and canAddSignal("Strong")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcLongAllowEntry
+            _qty = input_position_size * (input_strong_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, low - low * 0.002, 'Strong Long +' + str.tostring(_qty), color = color.lime, textcolor = color.black, style = label.style_label_up)
+
+            if lrcFilterPassed and isRealtimeAllowed and isLongAllowed
+                strategy.order("Strong_Long_Add", strategy.long, qty = _qty, comment = "Strong Long Add")
+                recordSignalAddition("Strong")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, low, "Strong Wait LRC", color = color.gray, style = label.style_label_up)
+
+        if superLongSignal and can_use_super_add and close < last_entry_price and canAddSignal("Super")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcLongAllowEntry
+            _qty = input_position_size * (input_super_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, low - low * 0.002, 'Super Long +' + str.tostring(_qty), color = color.blue, style = label.style_label_up)
+            if lrcFilterPassed and isRealtimeAllowed and isLongAllowed
+                strategy.order("Super_Long_Add", strategy.long, qty = _qty, comment = "Super Long Add")
+                recordSignalAddition("Super")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, low - low * 0.002, "Super Wait LRC", color = color.gray, style = label.style_label_up)
+
+        if lrcCrossLongSignal and can_use_lrc_cross_signal_add and close < last_entry_price and canAddSignal("LRC_Cross")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcLongAllowEntry
+            _qty = input_position_size * (input_lrc_cross_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, low - low * 0.002, 'LRC Cross Long +' + str.tostring(_qty), color = color.yellow, textcolor = color.black, style = label.style_label_up)
+            if lrcFilterPassed and isRealtimeAllowed and isLongAllowed
+                strategy.order("LRC_Cross_Long_Add", strategy.long, qty = _qty, comment = "LRC Cross Long Add")
+                recordSignalAddition("LRC_Cross")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, low - low * 0.002, "LRC Cross Wait LRC", color = color.gray, style = label.style_label_up)
+
+    // Short position addition
+    if isShort
+        // Check for additional signals to add to position and verify better price
+        if earlyShortSignal and can_use_early_add and close > last_entry_price and canAddSignal("Early")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcShortAllowEntry
+            _qty = input_position_size * (input_early_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, high + high * 0.002, 'Early Short +' + str.tostring(_qty), color = color.red, style = label.style_label_down)
+            if lrcFilterPassed and isRealtimeAllowed and isShortAllowed
+                strategy.order("Early_Short_Add", strategy.short, qty = _qty, comment = "Early Short Add")
+                recordSignalAddition("Early")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, high + high * 0.002, "Early Wait LRC", color = color.gray, style = label.style_label_down)
+
+        if strongShortSignal and can_use_strong_add and close > last_entry_price and canAddSignal("Strong")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcShortAllowEntry
+            _qty = input_position_size * (input_strong_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, high + high * 0.002, 'Strong Short +' + str.tostring(_qty), color = color.orange, style = label.style_label_down)
+            if lrcFilterPassed and isRealtimeAllowed and isShortAllowed
+                strategy.order("Strong_Short_Add", strategy.short, qty = _qty, comment = "Strong Short Add")
+                recordSignalAddition("Strong")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, high + high * 0.002, "Strong Wait LRC", color = color.gray, style = label.style_label_down)
+
+        if superShortSignal and can_use_super_add and close > last_entry_price and canAddSignal("Super")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcShortAllowEntry
+            _qty = input_position_size * (input_super_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, high + high * 0.002, 'Super Short +' + str.tostring(_qty), color = color.purple, style = label.style_label_down)
+            if lrcFilterPassed and isRealtimeAllowed and isShortAllowed
+                strategy.order("Super_Short_Add", strategy.short, qty = _qty, comment = "Super Short Add")
+                recordSignalAddition("Super")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, high + high * 0.002, "Super Wait LRC", color = color.gray, style = label.style_label_down)
+
+        if lrcCrossShortSignal and can_use_lrc_cross_signal_add and close > last_entry_price and canAddSignal("LRC_Cross")
+            lrcFilterPassed = not toggle_lrc_cross_entry or lrcShortAllowEntry
+            _qty = input_position_size * (input_lrc_cross_signal_addition / 100)
+            if show_debug_labels
+                label.new(bar_index, high + high * 0.002, 'LRC Cross Short +' + str.tostring(_qty), color = color.yellow, style = label.style_label_down)
+            if lrcFilterPassed and isRealtimeAllowed and isShortAllowed
+                strategy.order("LRC_Cross_Short_Add", strategy.short, qty = _qty, comment = "LRC Cross Short Add")
+                recordSignalAddition("LRC_Cross")
+            else if show_debug_labels and toggle_lrc_cross_entry
+                label.new(bar_index, high + high * 0.002, "LRC Cross Wait LRC", color = color.gray, style = label.style_label_down)
+// Check for regression direction change
+if strategy.position_size != 0 and not na(entry_regression_slope)
+    regression_direction_changed := math.sign(slope) != math.sign(entry_regression_slope)
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                               Position State Management                                              //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// Detect new positions (when strategy.position_size changes from 0 to non-zero)
+newLongPosition = strategy.position_size > 0 and strategy.position_size[1] == 0
+newShortPosition = strategy.position_size < 0 and strategy.position_size[1] == 0
+
+// Detect position size increases (additions to existing positions)
+longPositionIncrease = strategy.position_size > 0 and strategy.position_size > strategy.position_size[1] and strategy.position_size[1] > 0
+shortPositionIncrease = strategy.position_size < 0 and strategy.position_size < strategy.position_size[1] and strategy.position_size[1] < 0
+
+// Initialize state variables when a new position is detected
+if newLongPosition
+    // Calculate weighted average from all open trades
+    total_weighted_price = 0.0
+    total_size = 0.0
+    if strategy.opentrades > 0
+        for i = 0 to strategy.opentrades - 1
+            trade_size = strategy.opentrades.size(i)
+            trade_price = strategy.opentrades.entry_price(i)
+            total_weighted_price := total_weighted_price + (trade_price * math.abs(trade_size))
+            total_size := total_size + math.abs(trade_size)
+    weighted_sum_price := total_weighted_price
+    total_valid_size := total_size
+    avg_entry_price := total_size > 0 ? total_weighted_price / total_size : na
+    last_entry_price := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
+    last_entry_bar_index := bar_index
+    entry_regression_slope := slope
+    lastSignalReason := 'Long Position Detected'
+
+if newShortPosition
+    // Calculate weighted average from all open trades
+    total_weighted_price = 0.0
+    total_size = 0.0
+    if strategy.opentrades > 0
+        for i = 0 to strategy.opentrades - 1
+            trade_size = strategy.opentrades.size(i)
+            trade_price = strategy.opentrades.entry_price(i)
+            total_weighted_price := total_weighted_price + (trade_price * math.abs(trade_size))
+            total_size := total_size + math.abs(trade_size)
+    weighted_sum_price := total_weighted_price
+    total_valid_size := total_size
+    avg_entry_price := total_size > 0 ? total_weighted_price / total_size : na
+    last_entry_price := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
+    last_entry_bar_index := bar_index
+    entry_regression_slope := slope
+    lastSignalReason := 'Short Position Detected'
+
+// Update state when position size increases (additions)
+if longPositionIncrease
+    // Calculate weighted average from all open trades
+    total_weighted_price = 0.0
+    total_size = 0.0
+    if strategy.opentrades > 0
+        for i = 0 to strategy.opentrades - 1
+            trade_size = strategy.opentrades.size(i)
+            trade_price = strategy.opentrades.entry_price(i)
+            total_weighted_price := total_weighted_price + (trade_price * math.abs(trade_size))
+            total_size := total_size + math.abs(trade_size)
+    weighted_sum_price := total_weighted_price
+    total_valid_size := total_size
+    avg_entry_price := total_size > 0 ? total_weighted_price / total_size : na
+    last_entry_price := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
+    last_entry_bar_index := bar_index
+    lastSignalReason := 'Long Addition Detected'
+
+if shortPositionIncrease
+    // Calculate weighted average from all open trades
+    total_weighted_price = 0.0
+    total_size = 0.0
+    if strategy.opentrades > 0
+        for i = 0 to strategy.opentrades - 1
+            trade_size = strategy.opentrades.size(i)
+            trade_price = strategy.opentrades.entry_price(i)
+            total_weighted_price := total_weighted_price + (trade_price * math.abs(trade_size))
+            total_size := total_size + math.abs(trade_size)
+    weighted_sum_price := total_weighted_price
+    total_valid_size := total_size
+    avg_entry_price := total_size > 0 ? total_weighted_price / total_size : na
+    last_entry_price := strategy.opentrades > 0 ? strategy.opentrades.entry_price(strategy.opentrades - 1) : na
+    last_entry_bar_index := bar_index
+    lastSignalReason := 'Short Addition Detected'
+
+// Reset state when position is closed
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    weighted_sum_price := na
+    total_valid_size := na
+    avg_entry_price := na
+    last_entry_price := na
+    last_entry_bar_index := na
+    entry_regression_slope := na
+    regression_direction_changed := false
+    lrcLongAllowEntry := false
+    lrcShortAllowEntry := false
+    lastSignalReason := 'Position Closed'
+
+// section "plot price"
+// Plot average entry price
+avg_entry_plot = total_valid_size != 0 ? avg_entry_price : na
+
+// Debug label to show avg_entry_price
+if barstate.islast and strategy.position_size != 0
+    label.new(bar_index, high, "Avg Entry: " + str.tostring(avg_entry_price, "#.####") + "\nPos Size: " + str.tostring(math.abs(strategy.position_size)), 
+              style=label.style_label_down, color=color.yellow, textcolor=color.black, size=size.normal)
+plot(avg_entry_plot, title = 'Avg Entry', color = color.fuchsia, linewidth = 1)
+
+// Table update
+avg_percent_position = strategy.position_size != 0 ? math.abs(strategy.position_size) / input_position_size * 100 : 0
+avg_entry_text = total_valid_size != 0 ? str.tostring(avg_entry_price, '#.#####') : 'None'
+
+// Section "Trade info table"
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+//                               Strategy Trade info table                                                       //
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ {
+if input_show_table
+    var table trade_info = table.new(position = position.top_right, columns = 2, rows = 25, bgcolor = color.new(color.black, 80), border_width = 1)
+
+    if barstate.islast
+        // CRITICAL STATE VARIABLES THAT CAN CAUSE LOCKUP
+        
+        // Row 0-2: Position State Variables
+        table.cell(trade_info, 0, 2, 'strategy.position_size:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 2, str.tostring(strategy.position_size), text_color = strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.white, text_size = size.small)
+        
+        // Row 5-8: LRC Cross States (CRITICAL - can prevent entries if filter is on)
+        table.cell(trade_info, 0, 5, 'lrcLongAllowEntry:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 5, str.tostring(lrcLongAllowEntry), text_color = lrcLongAllowEntry ? color.green : color.red, text_size = size.small)
+        
+        table.cell(trade_info, 0, 6, 'lrcShortAllowEntry:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 6, str.tostring(lrcShortAllowEntry), text_color = lrcShortAllowEntry ? color.green : color.red, text_size = size.small)
+        
+        table.cell(trade_info, 0, 7, 'toggle_lrc_cross_entry:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 7, str.tostring(toggle_lrc_cross_entry), text_color = toggle_lrc_cross_entry ? color.yellow : color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 8, 'lrcLongEventBar:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 8, str.tostring(lrcLongEventBar), text_color = color.orange, text_size = size.small)
+        
+        // Row 9-11: Position Limit Variables
+        table.cell(trade_info, 0, 9, 'position_limit_reached:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 9, str.tostring(position_limit_reached), text_color = position_limit_reached ? color.red : color.green, text_size = size.small)
+        
+        table.cell(trade_info, 0, 10, 'input_max_position_size:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 10, str.tostring(input_max_position_size), text_color = color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 11, 'avg_percent_position:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 11, str.tostring(avg_percent_position, '#.##') + '%', text_color = color.lime, text_size = size.small)
+        
+        // Row 12-15: Price and Regression Variables
+        table.cell(trade_info, 0, 12, 'avg_entry_price:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 12, str.tostring(avg_entry_price), text_color = color.blue, text_size = size.small)
+        
+        table.cell(trade_info, 0, 13, 'last_entry_price:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 13, str.tostring(last_entry_price), text_color = color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 14, 'entry_regression_slope:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 14, str.tostring(entry_regression_slope), text_color = color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 15, 'regression_direction_changed:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 15, str.tostring(regression_direction_changed), text_color = regression_direction_changed ? color.yellow : color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 18, 'isLong/isShort:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 18, 'L:' + str.tostring(isLong) + ' S:' + str.tostring(isShort), text_color = color.white, text_size = size.small)
+        
+        // Row 19-21: Current Signal States
+        table.cell(trade_info, 0, 19, 'anyLongSignal:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 19, str.tostring(anyLongSignal), text_color = anyLongSignal ? color.green : color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 20, 'anyShortSignal:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 20, str.tostring(anyShortSignal), text_color = anyShortSignal ? color.red : color.white, text_size = size.small)
+        
+        table.cell(trade_info, 0, 21, 'lastSignalReason:', text_color = color.white, text_size = size.small)
+        table.cell(trade_info, 1, 21, lastSignalReason, text_color = color.orange, text_size = size.small)
+        
+        table.cell(trade_info, 0, 22, 'State Mismatch Check:', text_color = color.white, text_size = size.small)
+        state_mismatch = (strategy.position_size != 0 and strategy.position_size == 0) or (strategy.position_size == 0 and strategy.position_size != 0)
+        table.cell(trade_info, 1, 22, str.tostring(state_mismatch), text_color = state_mismatch ? color.red : color.green, text_size = size.small)
+        
+        table.cell(trade_info, 0, 23, 'Position vs HasEntry:', text_color = color.white, text_size = size.small)
+        pos_vs_hasentry = "Pos:" + str.tostring(strategy.position_size != 0) + " Init:" + str.tostring(strategy.position_size != 0)
+        table.cell(trade_info, 1, 23, pos_vs_hasentry, text_color = color.orange, text_size = size.small)
+        
+        table.cell(trade_info, 0, 24, 'LRC Cross States:', text_color = color.white, text_size = size.small)
+        lrc_states = "L:" + str.tostring(lrcLongAllowEntry) + " S:" + str.tostring(lrcShortAllowEntry) + " Tog:" + str.tostring(toggle_lrc_cross_entry)
+        table.cell(trade_info, 1, 24, lrc_states, text_color = color.white, text_size = size.small)
+        
+// Add plotting for all types of signals using label.new instead of plotshape
+if toggle_plot_signals
+    // Detect different types of signals
+    earlyLongPlot = earlyLongCondition and priceInCloud
+    earlyShortPlot = earlyShortCondition and priceInCloud
+    
+    strongLongPlot = lowerBreakCondition
+    strongShortPlot = upperBreakCondition
+    
+    superLongPlot = priceInDottedLineLong
+    superShortPlot = priceInDottedLineShort
+    
+    // Plot signals using label.new with distinct styles for each signal type
+    if lrcCrossLong
+        label.new(bar_index, low - low * 0.01, "LRC↑", 
+                 color = lrc_cross_color, 
+                 textcolor = color.black,
+                 style = label.style_triangleup, 
+                 size = size.small)
+                 
+    if lrcCrossShort
+        label.new(bar_index, high + high * 0.01, "LRC↓", 
+                 color = lrc_cross_color, 
+                 textcolor = color.black,
+                 style = label.style_triangledown, 
+                 size = size.small)
+
+    if earlyShortSignal or strongShortSignal or superShortSignal or lrcCrossShortSignal
+        signalType = earlyShortSignal ? 'Early' : strongShortSignal ? 'Strong' : superShortSignal ? 'Super' : 'LRC Cross'
+        labelColor = earlyShortSignal ? color.red : strongShortSignal ? color.orange : superShortSignal ? color.purple : color.yellow
+        label.new(bar_index, high + high * 0.001, signalType, color = labelColor, style = label.style_triangledown, textcolor = color.black,size = size.small)
+
+    if earlyLongSignal or strongLongSignal or superLongSignal or lrcCrossLongSignal
+        signalType = earlyLongSignal ? 'Early' : strongLongSignal ? 'Strong' : superLongSignal ? 'Super' : 'LRC Cross'
+        labelColor = earlyLongSignal ? color.red : strongLongSignal ? color.orange : superLongSignal ? color.purple : color.yellow
+        label.new(bar_index, low - low * 0.001, signalType, color = labelColor, style = label.style_triangleup, textcolor = color.black, size = size.small)
+// ══════════════════════════════════════════════════════════════════════════════════════════════════ }
