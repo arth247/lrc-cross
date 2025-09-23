@@ -4,6 +4,7 @@ import {
   IChartApi,
   ISeriesApi,
   CandlestickData,
+  LineData,
   UTCTimestamp, ColorType,
 } from 'lightweight-charts';
 import { Candle } from '../../../engine/types';
@@ -17,9 +18,11 @@ export class ChartComponent implements OnChanges {
   @ViewChild('container', { static: true }) container!: ElementRef<HTMLDivElement>;
 
   @Input() candles: Candle[] = [];
+  @Input() lrcData: number[] = [];
 
   private chart!: IChartApi;
   private candleSeries!: ISeriesApi<'Candlestick'>;
+  private lrcSeries!: ISeriesApi<'Line'>;
   private initialised = false;
 
   ngOnChanges(): void {
@@ -55,6 +58,14 @@ export class ChartComponent implements OnChanges {
       borderUpColor: '#26a69a',
       borderDownColor: '#ef5350',
     });
+
+    // Add LRC line series with bordeaux color (#872323 from Pine Script)
+    this.lrcSeries = this.chart.addLineSeries({
+      color: '#872323',
+      lineWidth: 3,
+      priceLineVisible: false,
+      title: 'LRC'
+    });
   }
 
   private render() {
@@ -67,5 +78,18 @@ export class ChartComponent implements OnChanges {
       close: c.c,
     }));
     this.candleSeries.setData(candleData);
+
+    // LRC line
+    const lrcLineData: LineData[] = [];
+    for (let i = 0; i < this.candles.length; i++) {
+      const lrcValue = this.lrcData[i];
+      if (lrcValue != null && !isNaN(lrcValue)) {
+        lrcLineData.push({
+          time: Math.floor(this.candles[i].t / 1000) as UTCTimestamp,
+          value: lrcValue
+        });
+      }
+    }
+    this.lrcSeries.setData(lrcLineData);
   }
 }

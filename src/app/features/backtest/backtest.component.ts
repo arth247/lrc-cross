@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DataService } from '../../core/data.service';
 import { Candle } from '../../../engine/types';
 import { ChartComponent } from '../chart/chart.component';
+import { calculateLRC } from '../../../engine/lrc';
 
 @Component({
   selector: 'app-chart-viewer',
@@ -26,12 +27,13 @@ import { ChartComponent } from '../chart/chart.component';
         <label>Symbol <input [(ngModel)]="symbol"></label>
         <label>Interval <input [(ngModel)]="interval"></label>
         <label>Limit <input type="number" [(ngModel)]="limit"></label>
+        <label>LRC Length <input type="number" [(ngModel)]="lrcLength"></label>
         <button (click)="load()">Load</button>
         <span *ngIf="candles().length">Bars: {{ candles().length }}</span>
       </div>
 
       <div class="chart-wrap">
-        <app-lwc-chart [candles]="candles()" />
+        <app-lwc-chart [candles]="candles()" [lrcData]="lrcData()" />
       </div>
     </div>
   `,
@@ -41,9 +43,11 @@ export class BacktestComponent implements OnInit {
   symbol = 'BANKUSDT';
   interval = '120';
   limit = 500;
+  lrcLength = 50; // Default LRC length from Pine Script
 
   // data
   candles = signal<Candle[]>([]);
+  lrcData = signal<number[]>([]);
 
   constructor(private data: DataService) {}
 
@@ -54,6 +58,11 @@ export class BacktestComponent implements OnInit {
 
   async load() {
     const c = await this.data.fetchBybit(this.symbol, this.interval, this.limit, 'linear');
+
+    // Calculate LRC using Pine Script's ta.linreg logic
+    const lrc = calculateLRC(c, this.lrcLength);
+
     this.candles.set(c);
+    this.lrcData.set(lrc);
   }
 }
