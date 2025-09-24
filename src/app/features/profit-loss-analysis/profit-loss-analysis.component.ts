@@ -13,22 +13,28 @@ interface EntryAnalysis {
   candleIndex: number;
 }
 
+type SortDirection = 'asc' | 'desc';
+
 @Component({
   selector: 'app-profit-loss-analysis',
   standalone: true,
   imports: [CommonModule, FormsModule],
   styles: [`
     .analysis-container {
-      padding: 16px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
       background: #f8f9fa;
       border-top: 2px solid #dee2e6;
     }
 
     .controls {
-      margin-bottom: 16px;
+      padding: 16px;
       display: flex;
       align-items: center;
       gap: 12px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #dee2e6;
     }
 
     .controls label {
@@ -45,6 +51,12 @@ interface EntryAnalysis {
       border-radius: 4px;
     }
 
+    .table-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 16px 16px 16px;
+    }
+
     .analysis-table {
       width: 100%;
       border-collapse: collapse;
@@ -59,6 +71,23 @@ interface EntryAnalysis {
       text-align: left;
       font-weight: 500;
       font-size: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    .sortable {
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .sortable:hover {
+      background: #5a6268;
+    }
+
+    .sort-indicator {
+      margin-left: 4px;
+      font-size: 12px;
     }
 
     .analysis-table td {
@@ -110,13 +139,20 @@ interface EntryAnalysis {
         <span *ngIf="entries.length > 0">
           (Analyzing {{entries.length}} entries)
         </span>
+        <span *ngIf="analysisData.length > 0" style="margin-left: 16px;">
+          Avg Profit: <span class="profit">+{{averageProfit.toFixed(2)}}%</span>
+          | Avg Loss: <span class="loss">{{averageLoss.toFixed(2)}}%</span>
+        </span>
       </div>
 
-      <div *ngIf="analysisData.length > 0; else noData">
+      <div class="table-container" *ngIf="sortedAnalysisData.length > 0; else noData">
         <table class="analysis-table">
           <thead>
             <tr>
-              <th>Entry #</th>
+              <th class="sortable" (click)="toggleSort()">
+                Entry #
+                <span class="sort-indicator">{{sortDirection === 'desc' ? '▼' : '▲'}}</span>
+              </th>
               <th>Type</th>
               <th>Entry Price</th>
               <th>Max Profit</th>
@@ -124,7 +160,7 @@ interface EntryAnalysis {
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let analysis of analysisData">
+            <tr *ngFor="let analysis of sortedAnalysisData">
               <td>#{{analysis.entryNumber}}</td>
               <td>
                 <span class="entry-type" [ngClass]="getTypeClass(analysis.type)">
@@ -140,8 +176,10 @@ interface EntryAnalysis {
       </div>
 
       <ng-template #noData>
-        <div class="no-data">
-          No entry data available. Click "Load" to fetch data and generate entries.
+        <div class="table-container">
+          <div class="no-data">
+            No entry data available. Click "Load" to fetch data and generate entries.
+          </div>
         </div>
       </ng-template>
     </div>
@@ -153,6 +191,10 @@ export class ProfitLossAnalysisComponent implements OnChanges {
 
   candleRange = 10;
   analysisData: EntryAnalysis[] = [];
+  sortedAnalysisData: EntryAnalysis[] = [];
+  sortDirection: SortDirection = 'desc';
+  averageProfit = 0;
+  averageLoss = 0;
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['candles'] || changes['entries']) {
@@ -164,9 +206,27 @@ export class ProfitLossAnalysisComponent implements OnChanges {
     this.analyzeEntries();
   }
 
+  toggleSort(): void {
+    this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    this.sortData();
+  }
+
+  private sortData(): void {
+    this.sortedAnalysisData = [...this.analysisData].sort((a, b) => {
+      if (this.sortDirection === 'asc') {
+        return a.entryNumber - b.entryNumber;
+      } else {
+        return b.entryNumber - a.entryNumber;
+      }
+    });
+  }
+
   private analyzeEntries(): void {
     if (!this.candles.length || !this.entries.length) {
       this.analysisData = [];
+      this.sortedAnalysisData = [];
+      this.averageProfit = 0;
+      this.averageLoss = 0;
       return;
     }
 
@@ -174,6 +234,19 @@ export class ProfitLossAnalysisComponent implements OnChanges {
       const analysis = this.analyzeEntry(entry);
       return analysis;
     });
+
+    // Calculate averages
+    if (this.analysisData.length > 0) {
+      const totalProfit = this.analysisData.reduce((sum, a) => sum + a.maxProfit, 0);
+      const totalLoss = this.analysisData.reduce((sum, a) => sum + a.maxLoss, 0);
+      this.averageProfit = totalProfit / this.analysisData.length;
+      this.averageLoss = totalLoss / this.analysisData.length;
+    } else {
+      this.averageProfit = 0;
+      this.averageLoss = 0;
+    }
+
+    this.sortData();
   }
 
   private analyzeEntry(entry: any): EntryAnalysis {
