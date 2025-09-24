@@ -96,13 +96,60 @@ export class BacktestComponent implements OnInit {
     const simpleCrosses = detectSimpleLRCCrosses(c, lrc);
     const bandCrosses = detectLRCCrossesWithBands(c, lrc, rvwapBands.lb1, rvwapBands.ub1);
 
-    console.log('Simple LRC Crosses:', simpleCrosses);
-    console.log('Band LRC Crosses:', bandCrosses);
-    console.log('RVWAP Bands sample:', {
-      rvwap: rvwapBands.rvwap.slice(-5),
-      ub1: rvwapBands.ub1.slice(-5),
-      lb1: rvwapBands.lb1.slice(-5)
+    // Create numbered entries log
+    const allEntries: { index: number; time: Date; type: string; price: number }[] = [];
+
+    if (this.showLRCCrossSimple) {
+      simpleCrosses.longCrosses.forEach(idx => {
+        allEntries.push({
+          index: idx,
+          time: new Date(c[idx].t),
+          type: 'Simple Long',
+          price: c[idx].c
+        });
+      });
+      simpleCrosses.shortCrosses.forEach(idx => {
+        allEntries.push({
+          index: idx,
+          time: new Date(c[idx].t),
+          type: 'Simple Short',
+          price: c[idx].c
+        });
+      });
+    }
+
+    if (this.showLRCCrossOriginal) {
+      bandCrosses.longCrosses.forEach(idx => {
+        allEntries.push({
+          index: idx,
+          time: new Date(c[idx].t),
+          type: 'Band Long',
+          price: c[idx].c
+        });
+      });
+      bandCrosses.shortCrosses.forEach(idx => {
+        allEntries.push({
+          index: idx,
+          time: new Date(c[idx].t),
+          type: 'Band Short',
+          price: c[idx].c
+        });
+      });
+    }
+
+    // Sort by time and add entry numbers
+    allEntries.sort((a, b) => a.time.getTime() - b.time.getTime());
+    const numberedEntries = allEntries.map((entry, i) => ({
+      ...entry,
+      entryNumber: i + 1
+    }));
+
+    console.log('=== LRC Cross Entries (Numbered) ===');
+    numberedEntries.forEach(entry => {
+      console.log(`#${entry.entryNumber} | ${entry.type} | ${entry.time.toLocaleString()} | Price: ${entry.price.toFixed(4)}`);
     });
+    console.log(`Total entries: ${numberedEntries.length}`);
+    console.log('===================================');
 
     this.candles.set(c);
     this.lrcData.set(lrc);

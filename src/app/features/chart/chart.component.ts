@@ -165,28 +165,29 @@ export class ChartComponent implements OnChanges {
 
     const markers: any[] = [];
 
+    // Collect all crosses with their timestamps and types
+    const allCrosses: { index: number; time: number; type: string; isLong: boolean }[] = [];
+
     // Add simple LRC cross markers
     if (this.showLRCCrossSimple && this.lrcCrossData.simple) {
       this.lrcCrossData.simple.longCrosses?.forEach((index: number) => {
         if (index < this.candles.length) {
-          markers.push({
-            time: Math.floor(this.candles[index].t / 1000) as UTCTimestamp,
-            position: 'belowBar',
-            color: '#00ff00',
-            shape: 'arrowUp',
-            text: 'Simple Long',
+          allCrosses.push({
+            index,
+            time: Math.floor(this.candles[index].t / 1000),
+            type: 'Simple Long',
+            isLong: true
           });
         }
       });
 
       this.lrcCrossData.simple.shortCrosses?.forEach((index: number) => {
         if (index < this.candles.length) {
-          markers.push({
-            time: Math.floor(this.candles[index].t / 1000) as UTCTimestamp,
-            position: 'aboveBar',
-            color: '#ff0000',
-            shape: 'arrowDown',
-            text: 'Simple Short',
+          allCrosses.push({
+            index,
+            time: Math.floor(this.candles[index].t / 1000),
+            type: 'Simple Short',
+            isLong: false
           });
         }
       });
@@ -196,31 +197,51 @@ export class ChartComponent implements OnChanges {
     if (this.showLRCCrossOriginal && this.lrcCrossData.withBands) {
       this.lrcCrossData.withBands.longCrosses?.forEach((index: number) => {
         if (index < this.candles.length) {
-          markers.push({
-            time: Math.floor(this.candles[index].t / 1000) as UTCTimestamp,
-            position: 'belowBar',
-            color: '#0080ff',
-            shape: 'circle',
-            text: 'Band Long',
+          allCrosses.push({
+            index,
+            time: Math.floor(this.candles[index].t / 1000),
+            type: 'Band Long',
+            isLong: true
           });
         }
       });
 
       this.lrcCrossData.withBands.shortCrosses?.forEach((index: number) => {
         if (index < this.candles.length) {
-          markers.push({
-            time: Math.floor(this.candles[index].t / 1000) as UTCTimestamp,
-            position: 'aboveBar',
-            color: '#ff8000',
-            shape: 'circle',
-            text: 'Band Short',
+          allCrosses.push({
+            index,
+            time: Math.floor(this.candles[index].t / 1000),
+            type: 'Band Short',
+            isLong: false
           });
         }
       });
     }
 
-    // Sort markers by time before setting them
-    markers.sort((a, b) => a.time - b.time);
+    // Sort all crosses by time
+    allCrosses.sort((a, b) => a.time - b.time);
+
+    // Create markers with sequential numbering
+    allCrosses.forEach((cross, index) => {
+      const entryNumber = index + 1;
+      const marker: any = {
+        time: cross.time as UTCTimestamp,
+        position: cross.isLong ? 'belowBar' : 'aboveBar',
+        text: `#${entryNumber} ${cross.type}`,
+      };
+
+      // Set colors and shapes based on type
+      if (cross.type.includes('Simple')) {
+        marker.color = cross.isLong ? '#00ff00' : '#ff0000';
+        marker.shape = cross.isLong ? 'arrowUp' : 'arrowDown';
+      } else {
+        marker.color = cross.isLong ? '#0080ff' : '#ff8000';
+        marker.shape = 'circle';
+      }
+
+      markers.push(marker);
+    });
+
     this.candleSeries.setMarkers(markers);
   }
 }
