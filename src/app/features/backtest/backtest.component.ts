@@ -4,13 +4,14 @@ import { FormsModule } from '@angular/forms';
 import { DataService } from '../../core/data.service';
 import { Candle } from '../../../engine/types';
 import { ChartComponent } from '../chart/chart.component';
+import { ProfitLossAnalysisComponent } from '../profit-loss-analysis/profit-loss-analysis.component';
 import { calculateLRC, detectSimpleLRCCrosses, detectLRCCrossesWithBands } from '../../../engine/lrc';
 import { calculateRVWAPWithBands } from '../../../engine/rvwap';
 
 @Component({
   selector: 'app-chart-viewer',
   standalone: true,
-  imports: [CommonModule, FormsModule, ChartComponent],
+  imports: [CommonModule, FormsModule, ChartComponent, ProfitLossAnalysisComponent],
   styles: [`
     .toolbar {
       display: flex; gap: 12px; align-items: center; padding: 8px 12px;
@@ -21,13 +22,29 @@ import { calculateRVWAPWithBands } from '../../../engine/rvwap';
     .toolbar .checkbox-group { display: flex; gap: 12px; align-items: center; background: rgba(59, 130, 246, 0.1); padding: 4px 8px; border-radius: 4px; }
     .toolbar input[type="number"] { width: 80px; }
     .page { height: 100vh; display: flex; flex-direction: column; }
-    .chart-wrap { flex: 1 1 auto; min-height: 0; }
+    .content-area { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+    .chart-wrap { flex: 1 1 auto; min-height: 400px; }
+    .analysis-wrap { flex: 0 0 auto; max-height: 238px; overflow-y: auto; }
   `],
   template: `
     <div class="page">
       <div class="toolbar">
         <label>Symbol <input [(ngModel)]="symbol"></label>
-        <label>Interval <input [(ngModel)]="interval"></label>
+        <label>Interval
+          <select [(ngModel)]="interval">
+            <option value="1">1m</option>
+            <option value="5">5m</option>
+            <option value="15">15m</option>
+            <option value="30">30m</option>
+            <option value="60">1h</option>
+            <option value="120">2h</option>
+            <option value="240">4h</option>
+            <option value="360">6h</option>
+            <option value="720">12h</option>
+            <option value="D">1d</option>
+            <option value="W">1w</option>
+          </select>
+        </label>
         <label>Limit <input type="number" [(ngModel)]="limit"></label>
         <label>LRC Length <input type="number" [(ngModel)]="lrcLength"></label>
         <label>RVWAP Window <input type="number" [(ngModel)]="rvwapWindow"></label>
@@ -46,14 +63,21 @@ import { calculateRVWAPWithBands } from '../../../engine/rvwap';
         </div>
       </div>
 
-      <div class="chart-wrap">
-        <app-lwc-chart
-          [candles]="candles()"
-          [lrcData]="lrcData()"
-          [rvwapData]="rvwapData()"
-          [lrcCrossData]="lrcCrossData()"
-          [showLRCCrossOriginal]="showLRCCrossOriginal"
-          [showLRCCrossSimple]="showLRCCrossSimple" />
+      <div class="content-area">
+        <div class="chart-wrap">
+          <app-lwc-chart
+            [candles]="candles()"
+            [lrcData]="lrcData()"
+            [rvwapData]="rvwapData()"
+            [lrcCrossData]="lrcCrossData()"
+            [showLRCCrossOriginal]="showLRCCrossOriginal"
+            [showLRCCrossSimple]="showLRCCrossSimple" />
+        </div>
+        <div class="analysis-wrap">
+          <app-profit-loss-analysis
+            [candles]="candles()"
+            [entries]="numberedEntries()" />
+        </div>
       </div>
     </div>
   `,
@@ -75,6 +99,7 @@ export class BacktestComponent implements OnInit {
   lrcData = signal<number[]>([]);
   rvwapData = signal<any>({});
   lrcCrossData = signal<any>({});
+  numberedEntries = signal<any[]>([]);
 
   constructor(private data: DataService) {}
 
@@ -97,23 +122,25 @@ export class BacktestComponent implements OnInit {
     const bandCrosses = detectLRCCrossesWithBands(c, lrc, rvwapBands.lb1, rvwapBands.ub1);
 
     // Create numbered entries log
-    const allEntries: { index: number; time: Date; type: string; price: number }[] = [];
+    const allEntries: { candleIndex: number; time: Date; type: string; price: number; isLong: boolean }[] = [];
 
     if (this.showLRCCrossSimple) {
       simpleCrosses.longCrosses.forEach(idx => {
         allEntries.push({
-          index: idx,
+          candleIndex: idx,
           time: new Date(c[idx].t),
           type: 'Simple Long',
-          price: c[idx].c
+          price: c[idx].c,
+          isLong: true
         });
       });
       simpleCrosses.shortCrosses.forEach(idx => {
         allEntries.push({
-          index: idx,
+          candleIndex: idx,
           time: new Date(c[idx].t),
           type: 'Simple Short',
-          price: c[idx].c
+          price: c[idx].c,
+          isLong: false
         });
       });
     }
@@ -121,18 +148,20 @@ export class BacktestComponent implements OnInit {
     if (this.showLRCCrossOriginal) {
       bandCrosses.longCrosses.forEach(idx => {
         allEntries.push({
-          index: idx,
+          candleIndex: idx,
           time: new Date(c[idx].t),
           type: 'Band Long',
-          price: c[idx].c
+          price: c[idx].c,
+          isLong: true
         });
       });
       bandCrosses.shortCrosses.forEach(idx => {
         allEntries.push({
-          index: idx,
+          candleIndex: idx,
           time: new Date(c[idx].t),
           type: 'Band Short',
-          price: c[idx].c
+          price: c[idx].c,
+          isLong: false
         });
       });
     }
@@ -158,11 +187,69 @@ export class BacktestComponent implements OnInit {
       simple: simpleCrosses,
       withBands: bandCrosses
     });
+    this.numberedEntries.set(numberedEntries);
   }
 
   onCrossToggleChange() {
-    // Trigger chart update by setting the data again
-    const currentData = this.lrcCrossData();
-    this.lrcCrossData.set({ ...currentData });
+    // Regenerate numbered entries based on current toggle state
+    const c = this.candles();
+    const currentCrossData = this.lrcCrossData();
+
+    if (!c.length || !currentCrossData) return;
+
+    const allEntries: { candleIndex: number; time: Date; type: string; price: number; isLong: boolean }[] = [];
+
+    if (this.showLRCCrossSimple && currentCrossData.simple) {
+      currentCrossData.simple.longCrosses?.forEach((idx: number) => {
+        allEntries.push({
+          candleIndex: idx,
+          time: new Date(c[idx].t),
+          type: 'Simple Long',
+          price: c[idx].c,
+          isLong: true
+        });
+      });
+      currentCrossData.simple.shortCrosses?.forEach((idx: number) => {
+        allEntries.push({
+          candleIndex: idx,
+          time: new Date(c[idx].t),
+          type: 'Simple Short',
+          price: c[idx].c,
+          isLong: false
+        });
+      });
+    }
+
+    if (this.showLRCCrossOriginal && currentCrossData.withBands) {
+      currentCrossData.withBands.longCrosses?.forEach((idx: number) => {
+        allEntries.push({
+          candleIndex: idx,
+          time: new Date(c[idx].t),
+          type: 'Band Long',
+          price: c[idx].c,
+          isLong: true
+        });
+      });
+      currentCrossData.withBands.shortCrosses?.forEach((idx: number) => {
+        allEntries.push({
+          candleIndex: idx,
+          time: new Date(c[idx].t),
+          type: 'Band Short',
+          price: c[idx].c,
+          isLong: false
+        });
+      });
+    }
+
+    // Sort by time and add entry numbers
+    allEntries.sort((a, b) => a.time.getTime() - b.time.getTime());
+    const numberedEntries = allEntries.map((entry, i) => ({
+      ...entry,
+      entryNumber: i + 1
+    }));
+
+    // Update signals
+    this.lrcCrossData.set({ ...currentCrossData });
+    this.numberedEntries.set(numberedEntries);
   }
 }
