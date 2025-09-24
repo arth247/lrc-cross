@@ -53,10 +53,10 @@ export function calculateLRC(candles: Candle[], length: number = 50): number[] {
 }
 
 /**
- * Detect LRC cross signals
+ * Detect simple LRC cross signals (without band conditions)
  * Returns arrays of long and short cross points
  */
-export function detectLRCCrosses(candles: Candle[], lrc: number[]): {
+export function detectSimpleLRCCrosses(candles: Candle[], lrc: number[]): {
   longCrosses: number[];  // Bar indices where close crosses above LRC
   shortCrosses: number[]; // Bar indices where close crosses below LRC
 } {
@@ -81,6 +81,51 @@ export function detectLRCCrosses(candles: Candle[], lrc: number[]): {
 
     // Crossunder: close crosses below LRC (short signal)
     if (prevClose >= prevLRC && currClose < currLRC) {
+      shortCrosses.push(i);
+    }
+  }
+
+  return { longCrosses, shortCrosses };
+}
+
+/**
+ * Detect LRC cross signals with band conditions (original Pine Script logic)
+ * Implements lines 518-519 from main.pine:
+ * - Long: ta.crossover(close, lrc) and close <= lb1
+ * - Short: ta.crossunder(close, lrc) and close >= ub1
+ */
+export function detectLRCCrossesWithBands(
+  candles: Candle[],
+  lrc: number[],
+  lb1: number[],
+  ub1: number[]
+): {
+  longCrosses: number[];  // Bar indices where close crosses above LRC AND close <= lb1
+  shortCrosses: number[]; // Bar indices where close crosses below LRC AND close >= ub1
+} {
+  const longCrosses: number[] = [];
+  const shortCrosses: number[] = [];
+
+  if (candles.length < 2 || lrc.length < 2) return { longCrosses, shortCrosses };
+
+  for (let i = 1; i < candles.length; i++) {
+    const prevClose = candles[i - 1].c;
+    const currClose = candles[i].c;
+    const prevLRC = lrc[i - 1];
+    const currLRC = lrc[i];
+    const currLB1 = lb1[i];
+    const currUB1 = ub1[i];
+
+    // Skip if values are not available
+    if (isNaN(prevLRC) || isNaN(currLRC) || isNaN(currLB1) || isNaN(currUB1)) continue;
+
+    // Long cross: close crosses above LRC AND close <= lb1
+    if (prevClose <= prevLRC && currClose > currLRC && currClose <= currLB1) {
+      longCrosses.push(i);
+    }
+
+    // Short cross: close crosses below LRC AND close >= ub1
+    if (prevClose >= prevLRC && currClose < currLRC && currClose >= currUB1) {
       shortCrosses.push(i);
     }
   }
